@@ -1096,8 +1096,7 @@ function configureHarnessQualifications(composition: ProductionComposition) {
     },
     async current(binding, value, client) {
       if (value.driverId === 'claude') {
-        await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
-          value.target.applicationInstallationId)
+        await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
         if (value.target.hostRef.kind === 'device') {
           const registry = harnessRegistry.pinOverride(value)
           const proof = await hostProfileEvidence.latest(value.instanceId, value.revision, client)
@@ -1153,8 +1152,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   const hostProfileChecks = composition.hostProfileChecks = new HostHarnessInstanceProfileChecks(hostSettings, hostProfileEvidence, commands, hostAuthority,
     new ProductionHostHarnessProfileQualifier(harnessRegistry, nativeFactories, () => deviceRuntime.endpointForDomains(), config.harnesses.workspaceRoot,
       infrastructure?.mode === 'replay' ? undefined : { async qualify(value, input) {
-        const apiKey = await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
-          value.target.applicationInstallationId)
+        const apiKey = await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
         const current = await claudeDiscovery.currentForConfiguration(value, input.signal)
         const binding = harnessRegistry.pinOverride(value)
         const recovery = await processRegistry.reserveLaunch(`claude-profile-check:${input.checkId}`)
@@ -1183,8 +1181,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
       },
     }) : undefined)
   const harnessInstances = composition.harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
-    await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
-          value.target.applicationInstallationId)
+    await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef)
     const proof = await harnessRegistry.profileEvidence(value, client, { includeFailed: true })
     return proof ? { target: proof.target, configurationFingerprint: proof.configurationFingerprint,
       qualified: proof.qualified, ...(proof.failure ? { failure: proof.failure } : {}) } : null
@@ -1218,9 +1215,6 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   const harnessCatalog = composition.harnessCatalog = new HarnessCatalogService(qualifier, settings, commands, config.harnesses.workspaceRoot, appMcpEndpoint)
   const nativeConfigurations = composition.nativeConfigurations = new NativeConfigurationService(
     config.harnesses.codexBinary, config.harnesses.workspaceRoot, nativeFactories, claudeMetadata, providerAccounts,
-    { mainId: async () => (await database.pool.query<{ id: string }>(
-      'select id from application_installation where singleton=true')).rows[0]?.id ?? '',
-    endpoint: () => deviceRuntime.endpointForDomains() },
   )
   composition.appRoutes = new AppMcpRoutes(database.pool, appMcpEndpoint, appLauncherPath(), () => composition.runtimeOwner)
   const maintenancePorts = composition.maintenancePorts = systemMaintenancePorts(process.env, { get codex() { return mainCodex.binary } })
@@ -1850,9 +1844,6 @@ function configureOperatorChat(composition: ProductionComposition) {
     if (binding) operatorAccountBindings.set(conversationId, binding)
     else operatorAccountBindings.delete(conversationId)
   }
-  resolveOperatorManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveOperatorManager.recoverCompaction = recoverChatCompaction
   composition.chat = new OperatorChatService(
     operatorConversations, operators,
@@ -1963,8 +1954,7 @@ function configureAgentChat(composition: ProductionComposition) {
     if (!row || row.agent_configuration_version_id !== configuration.id) {
       throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The chat configuration changed.', 409)
     }
-    const executionId = row.record.origin.kind === 'run_execution' && !row.record.sourceConfigurationVersionId
-      ? row.record.origin.executionId : undefined
+    const executionId = row.record.origin.kind === 'run_execution' ? row.record.origin.executionId : undefined
     const selected = await agentChatProfileSelection(configuration, sessionStartDirectory(start), executionId)
     return recoverChatCompaction(configuration, conversationId, session, start, state, principalId, signal,
       selected.profileSelection, selected.sourceExecution)
@@ -1982,9 +1972,6 @@ function configureAgentChat(composition: ProductionComposition) {
     }
     return undefined
   }
-  resolveAgentChatManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
   composition.agentChat = new AgentChatService(database.pool, agentConversations,
     new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
