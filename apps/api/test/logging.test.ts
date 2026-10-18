@@ -167,6 +167,99 @@ describe('log retention and noise', () => {
     expect(lines).toEqual([{ beforeDrain: 3, records: ['B', 'C'] }])
   })
 
+  it('prunes each completed segment while other rotations are still closing', async () => {
+    const dir = await temporaryDirectory('api-log-continuous-')
+    const { code, lines, stderr } = await run(`
+      import fs from 'node:fs'
+      import fsPromises from 'node:fs/promises'
+      import { syncBuiltinESMExports } from 'node:module'
+      import { join } from 'node:path'
+      import { componentLogger, enableFileLogging } from '${join(api, 'src/infrastructure/logger.ts')}'
+      await enableFileLogging(process.env)
+      const log = componentLogger('lifecycle')
+      const write = fs.write
+      const close = fs.close
+      const readDirectory = fsPromises.readdir
+      const written = Array.from({ length: 8 }, () => Promise.withResolvers())
+      const closing = Array.from({ length: 8 }, () => Promise.withResolvers())
+      const closes = []
+      const pending = new Set()
+      const originals = new Map()
+      for (const name of ['readlink', 'readdir', 'stat', 'unlink']) {
+        const original = fsPromises[name]
+        originals.set(name, original)
+        fsPromises[name] = (...args) => {
+          const operation = Reflect.apply(original, fsPromises, args)
+          pending.add(operation)
+          return operation.finally(() => pending.delete(operation))
+        }
+      }
+      syncBuiltinESMExports()
+      async function settleRetention() {
+        do {
+          await Promise.all([...pending])
+          await new Promise(resolve => setImmediate(resolve))
+        } while (pending.size)
+      }
+      fs.write = function (...args) {
+        const match = /"record":([0-7])/.exec(String(args[1]))
+        if (match && args[0] !== 1) {
+          const callback = args.pop()
+          args.push((...result) => {
+            callback(...result)
+            written[Number(match[1])].resolve()
+          })
+        }
+        return Reflect.apply(write, fs, args)
+      }
+      fs.close = function (fd, callback) {
+        const finished = Promise.withResolvers()
+        closes.push({ finished: finished.promise, release: () => close(fd, (...result) => {
+          callback(...result)
+          finished.resolve()
+        }) })
+        closing[closes.length - 1].resolve()
+      }
+      const snapshots = []
+      let released = 0
+      try {
+        for (let record = 0; record < 8; record++) {
+          log.info({ record }, 'continuous size roll')
+          await written[record].promise
+          await closing[record].promise
+          if (record < 2) continue
+          const segment = closes[released++]
+          segment.release()
+          await segment.finished
+          await settleRetention()
+          const names = (await readDirectory(process.env.LOG_DIR))
+            .filter(name => name.startsWith('api.') && name.endsWith('.log'))
+          snapshots.push(names.map(name => Number(name.split('.').at(-2))).sort((a, b) => a - b))
+        }
+      } finally {
+        for (const segment of closes.slice(released)) segment.release()
+        await Promise.all(closes.map(segment => segment.finished))
+        await settleRetention()
+        fs.write = write
+        fs.close = close
+        for (const [name, original] of originals) fsPromises[name] = original
+        syncBuiltinESMExports()
+      }
+      const names = (await readDirectory(process.env.LOG_DIR))
+        .filter(name => name.startsWith('api.') && name.endsWith('.log'))
+      const records = await Promise.all(names.map(async name =>
+        JSON.parse(await fsPromises.readFile(join(process.env.LOG_DIR, name), 'utf8')).record))
+      console.log(JSON.stringify({ snapshots, retained: records.sort((a, b) => a - b) }))
+    `, { LOG_DIR: dir, LOG_MAX_SIZE: '1b', LOG_MAX_FILES: '2' })
+    expect(code, stderr).toBe(0)
+    const result = lines.find(line => Array.isArray(line.snapshots))
+    // Two held closes and the active destination remain; completed older files are removed each time.
+    expect(result).toEqual({
+      snapshots: Array.from({ length: 6 }, (_, index) => [index + 2, index + 3, index + 4]),
+      retained: [6, 7],
+    })
+  })
+
   it.each(['burst', 'delayed writes', 'exit flush'])(
     'allows only the final record to cross the file size threshold during %s', async mode => {
       const dir = await temporaryDirectory('api-log-queued-')
