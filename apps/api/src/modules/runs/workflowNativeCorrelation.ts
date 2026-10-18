@@ -1,11 +1,11 @@
 import type { NativeGraphCorrelationRecord } from '@foreman-code/contracts/wave25'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
-import { activeNativeBatch, memoizeNativeRead, WORKFLOW_CORRELATION_READ_PREFIX } from '../run-graph/nativeBatch.js'
+import { activeNativeBatch, memoizeNativeRead } from '../run-graph/nativeBatch.js'
 
 /** Native writes hold the Run/head locks; include this batch's pending rows in the latest-turn selection. */
 export async function latestWorkflowCorrelation(sql: GraphTransactionSql, runId: string,
   executionId: string, turnCorrelation: string): Promise<string> {
-  const rows = await memoizeNativeRead(sql, `${WORKFLOW_CORRELATION_READ_PREFIX}${executionId}:${turnCorrelation}`, async () =>
+  const rows = await memoizeNativeRead(sql, `latest-workflow-correlation:${executionId}:${turnCorrelation}`, async () =>
     (await sql.query<{ correlation_key: string; first_native_sequence: string }>(
       `select correlation_key,first_native_sequence::text from run_native_correlations
        where run_id=$1 and execution_id=$2 and work_kind='workflow' and work_id=$2

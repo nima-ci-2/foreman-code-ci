@@ -49,10 +49,11 @@ it('refreshes persisted latest-turn candidates at each correlation flush', async
 it('omits full pins when projection nodes are supplied and preserves assembled snapshot contents', async () => {
   const f = await fixture()
   await f.owner.oneShotConnection().transaction(async sql => {
-    const { pins, ...withoutPins } = await readCompactProjectionRows(sql, f.scope)
-    expect(pins).toHaveLength(1)
+    const full = await readCompactProjectionRows(sql, f.scope)
+    expect(full.pins).toHaveLength(1)
     const supplied = await readCompactProjectionRows(sql, f.scope, f.f.version.definition.nodes.map(node => node.id))
     expect(supplied).not.toHaveProperty('pins')
+    const { pins: _pins, ...withoutPins } = full
     expect(supplied).toEqual(withoutPins)
     const projection = await readPublicProjectionLocked(sql, f.scope)
     expect(await readPublicProjectionLocked(sql, f.scope, f.f.version)).toEqual(projection)

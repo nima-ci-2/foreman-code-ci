@@ -23,7 +23,7 @@ export const CURRENT_BINDINGS_SQL = `select b.record,b.bound_at from run_repeat_
       order by b.binding_id limit $3`
 
 export interface CompactProjectionRows {
-  pins?: RepeatGraphPinsRow[]
+  pins: RepeatGraphPinsRow[]
   nodeRun: PublicNodeRunRow[]
   executions: PublicNodeExecutionRow[]
   jobs: PublicNodeJobRow[]
@@ -47,9 +47,8 @@ export async function readCompactProjectionRows(sql: GraphTransactionSql, scope:
   assertGraphTransaction(sql)
   const nodes = '(select ids from projection_nodes)::text[]'
   const executions = '(select ids from projection_executions)::text[]'
-  const pins = nodeIds === undefined ? REPEAT_GRAPH_PINS_SQL : undefined
   const queries = {
-    ...(pins === undefined ? {} : { pins }),
+    pins: REPEAT_GRAPH_PINS_SQL,
     nodeRun: PUBLIC_NODE_RUN_SQL,
     executions: parameters(PUBLIC_NODE_EXECUTIONS_SQL, ['$1', nodes]),
     jobs: parameters(PUBLIC_NODE_JOBS_SQL, ['$1', nodes, '$3', '$4', '$5']),
@@ -62,13 +61,11 @@ export async function readCompactProjectionRows(sql: GraphTransactionSql, scope:
     bindings: parameters(CURRENT_BINDINGS_SQL, ['$1', executions, '$9']),
   }
   const ctes = [
-    ...(pins === undefined ? [`projection_nodes as materialized (select $2::text[] as ids)`] : [
-      `pins as materialized (${pins})`,
-      `projection_nodes as materialized (
+    `pins as materialized (${queries.pins})`,
+    `projection_nodes as materialized (
       select coalesce($2::text[],(select array_agg(n.node->>'id') from pins p
         cross join lateral jsonb_array_elements(p.version_record->'definition'->'nodes') n(node))) as ids
-      )`,
-    ]),
+    )`,
     `executions as materialized (${queries.executions})`,
     `jobs as materialized (${queries.jobs})`,
     `projection_executions as materialized (
