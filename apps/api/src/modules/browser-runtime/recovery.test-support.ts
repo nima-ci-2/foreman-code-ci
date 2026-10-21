@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { vi } from 'vitest'
+import { vi, type Mock } from 'vitest'
 import { DomainError } from '../errors.js'
 import { BrowserBroker } from './broker.js'
 import { BrowserFileStore } from './files.js'
@@ -53,7 +53,7 @@ export async function runtimeRecoveryFixture() {
     capture: vi.fn(async () => async () => undefined), openLocal: vi.fn(async () => undefined),
     facts: () => ({ dialog: null, uploadChooser: null }), onTabClosed: () => () => undefined, onPopup: () => () => undefined,
   }
-  const reportFailure = vi.fn()
+  const reportFailure: Mock<(error: unknown) => void> = vi.fn()
   const broker: BrowserBroker = new BrowserBroker({ computerId: 'worker', driver, journal,
     closeSessionResources: sessionId => createBrowserSessionCleanup(media, files, reportFailure)(sessionId), authority: {
     resolve: async candidate => ({ subject: candidate, browser: { enabled: true, profileId: 'profile' },

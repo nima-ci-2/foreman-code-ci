@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { vi } from 'vitest'
+import { vi, type Mock } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { BrowserProfileService } from './service.js'
 import { BrowserProfileSyncCoordinator } from './sync.js'
@@ -90,7 +90,8 @@ export function profileWorkFixture() {
     authorize: async () => undefined,
     computers: async () => [...statuses].map(([id, status]) => ({ id, online: status !== 'offline' })),
   } })
-  const failures = vi.fn(), retention = { reconcile: vi.fn(async () => undefined) }
+  const failures: Mock<(error: unknown) => void> = vi.fn()
+  const retention = { reconcile: vi.fn(async () => undefined) }
   const dispatcher = () => new BrowserProfileDispatcher({ service, sync: new BrowserProfileSyncCoordinator(service), retention,
     reportFailure: failures, retryMs: 60_000 })
   return { owner, service, host, statuses, failures, retention, dispatcher }
