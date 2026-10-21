@@ -79,10 +79,14 @@ describe('workflow coordinated producers and native result consumers', () => {
     const { f, node, execution } = producer('plain')
     f.version.definition.handoffs = { contractVersion: 1 }
     for (const outcome of ['failed', 'canceled'] as const) {
-      const result: ExecutionResult = { outcome, error: { code: 'NATIVE_STOPPED', message: 'The original native attempt stopped.', retryable: false } }
+      const result: ExecutionResult = outcome === 'failed' ? { outcome,
+        error: { code: 'NATIVE_STOPPED', message: 'The original native attempt stopped.', retryable: false } } : { outcome }
       expect(normalizeRepeatTerminal(f.version, f.scope, { nodeId: node.id, occurrence: null }, { ...execution, result },
         { resultProtocol: COORDINATION_RESULT_PROTOCOL, workResultRepair: true }).result).toEqual(result)
     }
+    expect(() => normalizeRepeatTerminal(f.version, f.scope, { nodeId: node.id, occurrence: null }, { ...execution,
+      result: { outcome: 'canceled', error: { code: 'INVALID', message: 'Cancellation is not a failure.', retryable: false } },
+    }, { resultProtocol: COORDINATION_RESULT_PROTOCOL })).toThrow('only a failed result may include an error')
   })
 
   it('uses saved exclusive routing for a coordinated choice and preserves an unmarked handoff envelope', () => {
