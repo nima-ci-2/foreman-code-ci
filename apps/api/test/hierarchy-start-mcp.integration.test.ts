@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
+import { inspect } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { WorkflowHierarchyReadResultSchema, WorkflowReportsPageSchema } from '@foreman-code/contracts'
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
@@ -59,6 +60,7 @@ describe.skipIf(!postgresEnabled)('single-computer hierarchy Start through authe
       const runId = started.run.id
       CurrentRunDetailsSchema.parse(await f.services.runs.get(f.writer.principal, workspaceId, runId))
       const read = async () => {
+        expect(f.dispatchFailureDetails, inspect(f.dispatchFailureDetails, { depth: 8 })).toEqual([])
         CurrentRunDetailsSchema.parse(await f.services.runs.get(f.writer.principal, workspaceId, runId))
         return CurrentRunDetailsSchema.parse(await workflowChatCall(f, 'run_get', { workspaceId, runId, detail: 'full' }))
       }

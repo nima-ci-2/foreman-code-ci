@@ -34,8 +34,9 @@ export async function currentOperatorIntegration(options: Parameters<typeof chec
   const writer = await access.issue({ name: 'Current Operator integration', audience: 'operator', expiresAt: new Date(Date.now() + 600000),
     grants: [{ actions: ManagementActionSchema.options, scope: {} }] })
   const dispatchErrors: unknown[] = []
+  const dispatchFailureDetails: unknown[] = []
   const binding = createCurrentNativeProductionFactory({ isRuntimeOpen: () => true,
-    reportDispatchFailure: (_id, code) => dispatchErrors.push(code) })({ primaryPool: f.db.pool, commands,
+    reportDispatchFailure: (_id, code, error) => { dispatchErrors.push(code); dispatchFailureDetails.push(error) } })({ primaryPool: f.db.pool, commands,
     runs: f.runs, workflows: f.workflows, locations: f.locations, engine: f.engine,
     nativeExecutions: f.native, interactions: f.service, checkpointer: f.checkpointer })
   const settings = new PostgresSettingsRepository(f.db.pool)
@@ -67,7 +68,7 @@ export async function currentOperatorIntegration(options: Parameters<typeof chec
       return client
     }
     const client = await connect(writer.token)
-    return { ...f, app, address, client, connect, writer, access, services, commands, dispatchErrors,
+    return { ...f, app, address, client, connect, writer, access, services, commands, dispatchErrors, dispatchFailureDetails,
       async close() { await Promise.allSettled(clients.map((c) => c.close())); await app.close(); await f.close() },
       async create() {
         const created = (await services.workflows.create(writer.principal, 'mcp', { workspaceId: f.f.scope.workspaceId, commandId: randomUUID(), name: 'Transport current workflow' })).value
