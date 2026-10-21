@@ -1,15 +1,15 @@
-import { canonicalJson, type ChatSendRequest, type EngineChatReadback, type HarnessExecution,
+import { canonicalJson, type EngineChatReadback, type HarnessExecution,
   type NativeSessionReference } from '@foreman-code/contracts'
 import type { GraphSqlClient, GraphTransactionSql } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { markWorkflowControlCommandLocked, readWorkflowControlCommandLocked } from '../collaboration/workflowControlRecords.js'
-import type { WorkflowChatLockedTarget, WorkflowChatNativeTarget, WorkflowChatOwnerPort,
+import type { WorkflowChatNativeTarget, WorkflowChatOwnerPort,
   WorkflowChatTarget, WorkflowControlCommand } from '../collaboration/workflowControlTypes.js'
 import type { SessionWriteLease, SingleWriterSessionManager } from './sessionWriter.js'
 import { readWorkflowNativeChat } from './workflowChatNativeRead.js'
-import { workflowChatInputPrompt } from './workflowChatInput.js'
+import { admittedWorkflowChatPrompt } from './workflowChatInput.js'
 
 export interface WorkflowChatNativeCapture {
   native: WorkflowChatNativeTarget
@@ -25,7 +25,7 @@ export interface WorkflowChatNativeOwnerDependencies {
     work: (owner: RunOwnership, source: HarnessExecution) => Promise<T>): Promise<T>
   capture(target: WorkflowChatTarget, source: HarnessExecution): WorkflowChatNativeCapture | undefined
   captureForRead(target: WorkflowChatTarget): WorkflowChatNativeCapture | undefined
-  validateAdmission(context: WorkflowChatLockedTarget, request: ChatSendRequest): Promise<{ nativePrompt?: string } | void>
+  validateAdmission: WorkflowChatOwnerPort['validateAdmission']
   dispatchConsultation(target: WorkflowChatTarget, command: WorkflowControlCommand,
     owner: RunOwnership, source: HarnessExecution): Promise<void>
 }
@@ -113,7 +113,7 @@ export function createWorkflowChatOwner(deps: WorkflowChatNativeOwnerDependencie
       if (command.operation === 'steer') {
         if (!command.request || !capture.native.nativeTurnId) throw new DomainError('STEER_UNAVAILABLE', 'No exact native turn remains.', 409)
         const accepted = await capture.manager.steerQualified(capture.session, {
-          prompt: command.nativePrompt ?? workflowChatInputPrompt(command.request), expectedTurnId: capture.native.nativeTurnId,
+          prompt: admittedWorkflowChatPrompt(command), expectedTurnId: capture.native.nativeTurnId,
           clientCorrelationId: command.id, controlCommandId: command.id, ownerRequestId: capture.native.ownerRequestId,
         }, beforeDispatch, capture.lease.guard.signal)
         if (accepted.nativeTurnId !== capture.native.nativeTurnId || !offered) throw new DomainError('NATIVE_CONTROL_RECEIPT_CONFLICT',

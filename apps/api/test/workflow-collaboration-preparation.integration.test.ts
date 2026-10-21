@@ -4,6 +4,13 @@ import { COORDINATION_RESULT_PROTOCOL, type AgentSubject, type BoardApplicationR
 import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { DomainError } from '../src/modules/errors.js'
 import { requestRepeatRunStop } from '../src/modules/runs/repeatLifecycle.js'
+import { recordWorkflowExecutionFailure } from '../src/modules/runs/workflowLifecycle.js'
+import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
+import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
+import { createWorkflowRepositoryServices } from '../src/modules/runs/workflowRepositoryServices.js'
+import { RepeatRepositoryFactory } from '../src/modules/runs/repeatRepositoryHost.js'
+import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
+import { createWorkflowCollaborationHooks } from '../src/modules/collaboration/workflowHooks.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { isWorkflowResultEffectFailure } from '../src/modules/runs/workflowResultEffectFailure.js'
 import { WorkflowCollaborationIntegration } from '../src/modules/collaboration/workflowIntegration.js'
@@ -109,10 +116,17 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
     try {
       await integration.prepare(f.owner, f.run, f.version, f.execution)
       const prompt = await integration.readPrompt(f.owner, f.execution)
-      await f.finish(f.execution.id, { outcome: 'failed', error: {
+      const budgets = new PostgresApprovalBudgetRepository(db.pool)
+      await budgets.ensure(f.execution.id, f.run.id, 60_000)
+      const services = createWorkflowRepositoryServices(createWorkflowNativeCaptureChannel().verify).services
+      const store = new RepeatRepositoryFactory(new WorkspaceLocationService(db.pool, f.commands, db.directory, 'runner-local'),
+        db.directory, { ...services, collaboration: createWorkflowCollaborationHooks() }).forOwner(f.owner, f.version)
+      await recordWorkflowExecutionFailure(f.owner, f.execution.id, { outcome: 'failed', error: {
         code: 'NATIVE_TRANSPORT_UNAVAILABLE', message: 'A retryable native transport failure.', retryable: true,
       } })
-      const retried = await f.store.acceptWorkTerminal(f.execution.id,
+      await budgets.stop(f.execution.id)
+      await store.settleNegativeExecution(f.execution.id, false)
+      const retried = await store.acceptWorkTerminal(f.execution.id,
         attempt => f.candidate(f.execution.workflowNodeId, attempt))
       expect(retried.kind).toBe('retry')
       if (retried.kind !== 'retry') throw new Error('Expected the admitted retry of the same work')
@@ -214,8 +228,8 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
     const f = await fixture({ memory: true }), a = board()
     const integration = new WorkflowCollaborationIntegration({ memoryBoards: a.memoryBoards }, async () => 'computer')
     try {
-      const result: BoardResult = { kind: 'changes', operations: [{ kind: 'note_create', boardId: 'board-one',
-        text: 'A corrected note', expectedRevision: 6, commandId: 'note-command' }] }
+      const result = { kind: 'changes', operations: [{ kind: 'note_create', boardId: 'board-one',
+        text: 'A corrected note', expectedRevision: 6, commandId: 'note-command' }] } satisfies BoardResult
       const execution = await f.finish(f.execution.id, { outcome: 'succeeded', output: {
         summary: 'Complete', board: result, routing: { kind: 'finish' }, data: { latestDeliverable: 'Result', remainingFindings: [] },
       } })

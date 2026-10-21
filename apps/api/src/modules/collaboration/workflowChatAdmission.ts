@@ -59,7 +59,7 @@ export async function admitWorkflowChatSendLocked(context: WorkflowChatLockedTar
   identity: AdmissionIdentity, owner: WorkflowChatOwnerPort) {
   await assertSendable(context)
   const applied = appliedIntent(context, request)
-  const prepared = await owner.validateAdmission(context, request)
+  const prepared = await owner.validateAdmission(context, request, { ...identity, appliedIntent: applied })
   const operation = applied === 'steer' ? 'steer' : applied === 'interrupt_and_send' ? 'interrupt'
     : context.target.kind === 'workflow_coordinator' ? 'consultation' : 'input'
   const receipt = ChatDeliveryReceiptSchema.parse({ id: identity.id, commandId: identity.commandId,
@@ -68,7 +68,7 @@ export async function admitWorkflowChatSendLocked(context: WorkflowChatLockedTar
     ...(request.sourcePostId ? { postId: request.sourcePostId } : {}),
     createdAt: identity.now, updatedAt: identity.now })
   await insertControlCommand(context, { ...identity, digest: controlDigest({ kind: 'delivery', request }),
-    request, kind: 'delivery', operation, receipt, ...(prepared?.nativePrompt !== undefined ? { nativePrompt: prepared.nativePrompt } : {}) })
+    request, kind: 'delivery', operation, receipt, nativePrompt: prepared.nativePrompt })
   if (context.target.kind === 'workflow_coordinator') {
     if (applied === 'steer') {
       const active = await readCoordinatorConsultationLocked(context.sql, context.run.id, context.target.waitingActivationId)

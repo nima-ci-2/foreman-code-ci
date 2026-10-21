@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { makeCurrentWorkflowFixture, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
+import { ExclusiveGraphConnection } from '../run-graph/connection.js'
+import type pg from 'pg'
 import { hierarchyRequestedWork } from './hierarchyGroupAdmission.js'
 import { parseHierarchyWorkResult, type HierarchyWorkResult } from './hierarchyResults.js'
 import { hasWorkflowExecutionCapacityLocked } from './workflowExecutionBudget.js'
@@ -70,8 +72,10 @@ describe('hierarchy delegation preparation', () => {
     const f = fixture()
     const query = vi.fn<GraphTransactionSql['query']>()
       .mockResolvedValue({ rows: [{ total: '4' }], rowCount: 1, command: 'SELECT', oid: 0, fields: [] })
-    const sql: GraphTransactionSql = { transaction: true, query }
-    expect(await hasWorkflowExecutionCapacityLocked(sql, f.saved.run.id, f.version, null, 4)).toBe(true)
-    expect(await hasWorkflowExecutionCapacityLocked(sql, f.saved.run.id, f.version, null, 5)).toBe(false)
+    const connection = new ExclusiveGraphConnection({ query } as unknown as pg.ClientBase, () => {})
+    await connection.transaction(async sql => {
+      expect(await hasWorkflowExecutionCapacityLocked(sql, f.saved.run.id, f.version, null, 4)).toBe(true)
+      expect(await hasWorkflowExecutionCapacityLocked(sql, f.saved.run.id, f.version, null, 5)).toBe(false)
+    })
   })
 })

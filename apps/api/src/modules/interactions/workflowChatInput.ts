@@ -1,5 +1,12 @@
 import { HarnessExecutionRequestSchema, type ChatSendRequest, type HarnessExecutionRequest } from '@foreman-code/contracts'
 import type { WorkflowQueuedInput } from '../collaboration/workflowControlTypes.js'
+import { DomainError } from '../errors.js'
+
+export function admittedWorkflowChatPrompt(command: { nativePrompt?: string }): string {
+  if (!command.nativePrompt) throw new DomainError('CHAT_NATIVE_PROMPT_UNAVAILABLE',
+    'The admitted native prompt is unavailable. The original input remains retained.', 409)
+  return command.nativePrompt
+}
 
 /** Only admitted text and immutable file references enter the native prompt.
  * Attachments-only sends still carry a real, nonempty input. */
@@ -17,7 +24,12 @@ export function appendWorkflowChatInput(request: HarnessExecutionRequest,
   input: WorkflowQueuedInput | undefined): HarnessExecutionRequest {
   if (!input) return request
   return HarnessExecutionRequestSchema.parse({ ...request,
-    initialPrompt: [request.initialPrompt,
-      `User direction for this existing work (delivery ${JSON.stringify(input.receiptId)}):`,
-      workflowChatInputPrompt(input.request)].filter(Boolean).join('\n\n') })
+    initialPrompt: workflowChatDirectionPrompt(request, input) })
+}
+
+export function workflowChatDirectionPrompt(request: Pick<HarnessExecutionRequest, 'initialPrompt'>,
+  input: Pick<WorkflowQueuedInput, 'receiptId' | 'request'>): string {
+  return [request.initialPrompt,
+    `User direction for this existing work (delivery ${JSON.stringify(input.receiptId)}):`,
+    workflowChatInputPrompt(input.request)].filter(Boolean).join('\n\n')
 }

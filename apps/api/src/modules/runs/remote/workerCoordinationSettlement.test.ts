@@ -5,6 +5,7 @@ import type { NativeHistory } from '../../harnesses/port.js'
 import { runningInstalledFixture } from './__tests__/installedWorkflowHost.js'
 import { RemoteOperationJournal } from './operationJournal.js'
 import { readUntil } from '../../../../test/helpers/observableCondition.js'
+import { RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
 
 describe('Worker coordinated result settlement', () => {
   it('retains one native owner for two corrections until Main commits, then closes and replays the exact result', async () => {
@@ -84,7 +85,13 @@ describe('Worker coordinated result settlement', () => {
       expect(f.closeOwner).not.toHaveBeenCalled()
       await f.call('settle-turn', { correlationId: 'execution:execution', nativeTurnId: 'original-turn' })
       expect(f.turns).toHaveBeenCalledTimes(1)
-      await f.stop()
+      const current = await f.journal.status(f.intent.operationId)
+      if (current.status !== 'known') throw new Error('Expected the retained original reviewer')
+      expect(current.receipt.native).toMatchObject({ sessionId: 'original-session', turnId: 'original-turn' })
+      await f.call('control', { command: RemoteOwnerControlSchema.parse({ schemaVersion: 1, protocolVersion: 1,
+        commandId: 'close-original-reviewer', operationId: f.intent.operationId,
+        attemptId: f.intent.attemptId, executionId: f.intent.executionId, bindingHash: f.intent.bindingHash,
+        owner: f.intent.owner, native: current.receipt.native, action: { kind: 'stop' } }) })
       await f.settled
       expect(f.closeOwner).toHaveBeenCalledTimes(1)
     } finally { f.finish('succeeded'); await f.host.close() }

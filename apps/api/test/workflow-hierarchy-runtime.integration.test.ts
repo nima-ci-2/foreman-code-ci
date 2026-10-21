@@ -151,7 +151,18 @@ describe.skipIf(!postgresEnabled)('hierarchy runtime obligations and reservation
   }, 90_000)
 
   it('refuses the entire child set when capacity fits children but omits their parent summary', async () => {
-    const f = await checkpointRuntimeFixture(1, 1, { fixture: hierarchyRuntimeFixture({ maximum: 4 }),
+    const saved = hierarchyRuntimeFixture({ maximum: 4 })
+    const coordinators = new Set(['master', 'build', 'test', 'bugs'])
+    saved.configurations = saved.configurations.filter(configuration => configuration.productRole !== 'coder')
+    saved.version.agentConfigurationVersionIds = Object.fromEntries(saved.configurations.map(configuration =>
+      [configuration.agentId, configuration.id]))
+    saved.run.agentConfigurationVersionIds = saved.version.agentConfigurationVersionIds
+    saved.version.definition.nodes = saved.version.definition.nodes.filter(node => coordinators.has(node.id))
+      .map(node => node.id === 'master' ? node : { id: node.id, agentId: node.agentId, name: node.name })
+    saved.version.definition.edges = saved.version.definition.edges.filter(edge => coordinators.has(edge.target))
+    saved.version.definition.hierarchy!.parents = saved.version.definition.hierarchy!.parents
+      .filter(member => coordinators.has(member.workflowNodeId))
+    const f = await checkpointRuntimeFixture(1, 1, { fixture: saved,
       approvalNodeIds: [], collaborationPorts: {}, outputFor: coordinationOutput })
     try {
       await expect(f.engine.start(f.f.run.id)).rejects.toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED',

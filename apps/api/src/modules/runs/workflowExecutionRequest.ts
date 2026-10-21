@@ -33,7 +33,7 @@ function intervalCheckPrompt(index: number, interval: { everySeconds: number; pr
   ].join('\n')
 }
 
-export function workflowExecutionRequest(input: {
+interface WorkflowExecutionRequestInput {
   execution: HarnessExecution
   version: WorkflowVersionV3
   configuration: AgentConfigurationVersion
@@ -41,7 +41,15 @@ export function workflowExecutionRequest(input: {
   executionContext?: HarnessExecutionContext | undefined
   resultProtocol?: ResultProtocol | undefined
   collaborationPrompt?: string | undefined
-}) {
+}
+
+export function workflowExecutionRequest(input: WorkflowExecutionRequestInput) {
+  return HarnessExecutionRequestSchema.parse({ ...workflowExecutionPromptContext(input),
+    workingDirectory: input.execution.workingDirectory, runtimeDirectory: input.execution.runtimeDirectory })
+}
+
+/** A queued execution has its task context before placement assigns native directories. */
+export function workflowExecutionPromptContext(input: WorkflowExecutionRequestInput) {
   const { execution, version, configuration, workspaceId, executionContext, resultProtocol } = input
   const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
   if (!node || node.kind === 'job') throw new Error('Native execution requires an Agent workflow node.')
@@ -81,13 +89,11 @@ export function workflowExecutionRequest(input: {
     'Use the explicit direction delivered to this exact execution. Preserve the latest deliverable and account for its unresolved findings.',
   ].join('\n') : undefined
   const prompts = [initialPrompt, coordination, input.collaborationPrompt, noticePrompt, returnPrompt, direction].filter(Boolean)
-  return HarnessExecutionRequestSchema.parse({
+  return HarnessExecutionRequestSchema.omit({ workingDirectory: true, runtimeDirectory: true }).parse({
     executionId: execution.id,
     runId: execution.runId,
     workspaceId,
     workflowNodeId: execution.workflowNodeId,
-    workingDirectory: execution.workingDirectory,
-    runtimeDirectory: execution.runtimeDirectory,
     ...(execution.systemPrompt ? { systemPrompt: execution.systemPrompt } : {}),
     ...(prompts.length ? { initialPrompt: prompts.join('\n\n') } : {}),
     configuration,

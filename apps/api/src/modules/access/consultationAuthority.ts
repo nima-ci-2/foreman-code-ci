@@ -56,7 +56,7 @@ export async function readCoordinatorCredentialAuthority(sql: GraphSqlClient, ra
     || execution.runId !== row.run_id || execution.id !== row.source_execution_id) {
     throw new DomainError('AUTH_REVOKED', 'The consultation identity is inconsistent.', 401)
   }
-  return { ...row, subject: AgentSubjectSchema.parse({ kind: 'coordinator_consultation', agent, binding }) }
+  return { ...row, execution, subject: AgentSubjectSchema.parse({ kind: 'coordinator_consultation', agent, binding }) }
 }
 
 /** Shared A/B/C feature services derive their public subject from this binding;

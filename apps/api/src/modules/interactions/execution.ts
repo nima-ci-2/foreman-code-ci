@@ -24,7 +24,6 @@ import {
   type ReviewJob,
   type WorkflowRun,
   type CoordinationResultContext,
-  type ChatSendRequest,
   type CoordinatorConsultationBinding,
   canonicalJson,
   HarnessExecutionRequestSchema,
@@ -37,14 +36,14 @@ import type { NativeHarnessSessionManager, NativeHistory } from '../harnesses/po
 import { DomainError } from '../errors.js'
 import type { WorkflowCollaborationIntegration } from '../collaboration/workflowIntegration.js'
 import type { WorkflowQueuedInput, WorkflowChatLockedTarget, WorkflowChatTarget,
-  WorkflowControlCommand } from '../collaboration/workflowControlTypes.js'
+  WorkflowControlCommand, WorkflowChatOwnerPort } from '../collaboration/workflowControlTypes.js'
 import { appendWorkflowChatInput } from './workflowChatInput.js'
-import { workflowChatInputPrompt } from './workflowChatInput.js'
+import { admittedWorkflowChatPrompt } from './workflowChatInput.js'
 import { createWorkflowChatOwner, type WorkflowChatNativeCapture } from './workflowChatOwner.js'
+import { readWorkflowControlCommandLocked } from '../collaboration/workflowControlRecords.js'
 import { observeWorkflowConsultation } from './workflowConsultationObserver.js'
 import { readCoordinatorConsultationLocked, failCoordinatorConsultationPreparationLocked,
   settleCoordinatorConsultationLocked } from '../collaboration/workflowConsultations.js'
-import { readWorkflowControlCommandLocked } from '../collaboration/workflowControlRecords.js'
 import type { ConsultationTransaction } from '../collaboration/consultationBrowser.js'
 import { ReviewerDispatcher } from './reviewer.js'
 import { nativePersistenceRedactor } from './nativePersistence.js'
@@ -162,6 +161,7 @@ interface OwnedNativeSession {
     task?: Promise<void>
     started?: Promise<void>
     credential?: IssuedWorkerCredential
+    accessRebindAttempted?: boolean
     previous?: { context: NativeManagerResolutionContext; credential?: IssuedWorkerCredential }
   }
 }
@@ -276,8 +276,10 @@ export class ApprovalExecutionCoordinator {
         owned.session = session
         owned.generation += 1
         // A late create/attach completion invalidates earlier closure evidence.
-        this.closedExecutions.delete(owned.execution.id)
-        this.closedWorkflowSessions.delete(owned.execution.id)
+        if (!owned.consultation) {
+          this.closedExecutions.delete(owned.execution.id)
+          this.closedWorkflowSessions.delete(owned.execution.id)
+        }
         delete owned.openingFailed
         return session
       },
@@ -671,7 +673,8 @@ export class ApprovalExecutionCoordinator {
     private readonly nativeCaptures?: WorkflowNativeCapturePort,
     private readonly reviewNativeCaptures?: ReviewNativeCapturePort,
     private readonly recoverNativeProcesses?: (executionId: string, signal: AbortSignal, owner: RunOwnership) => Promise<boolean>,
-    private readonly reserveNativeLaunch?: (executionId: string, manager: NativeHarnessSessionManager) => void | Promise<void>,
+    private readonly reserveNativeLaunch?: (executionId: string, manager: NativeHarnessSessionManager,
+      consultation?: CoordinatorConsultationBinding) => void | Promise<void>,
     private readonly prepareManagerContext?: (context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>,
     private readonly commitReviewNative?: (executionId: string) => Promise<void>,
     private readonly collaboration?: WorkflowCollaborationIntegration,
@@ -871,7 +874,7 @@ export class ApprovalExecutionCoordinator {
   /** Public controls reuse this coordinator's current Run/native ownership.
    * Readback only projects the original observer's durable source. */
   workflowChatOwner(sql: GraphSqlClient,
-    validateAdmission: (context: WorkflowChatLockedTarget, request: ChatSendRequest) => Promise<{ nativePrompt?: string } | void>) {
+    validateAdmission: WorkflowChatOwnerPort['validateAdmission']) {
     return this.workflowControls = createWorkflowChatOwner({ sql, runs: this.runs, validateAdmission,
       withOwner: async (target, work) => {
         const id = target.kind === 'workflow_execution' ? target.execution.executionId
@@ -983,6 +986,11 @@ export class ApprovalExecutionCoordinator {
     try {
       await current.stopReviewerRenewal?.()
       delete current.stopReviewerRenewal
+      if (resolved?.processState === 'needs_start') {
+        await this.reserveNativeLaunch?.(source.id, this.rawManagers.get(current.manager) ?? current.manager, active.binding)
+        resolved.beginStart?.()
+      }
+      if (consultation.previous) consultation.accessRebindAttempted = true
       if (!consultation.credential) consultation.credential = await this.prepareConsultationCredential(
         current, active.binding, !!active.nativeTarget)
       this.managerCredentials.set(current.manager, consultation.credential)
@@ -990,11 +998,10 @@ export class ApprovalExecutionCoordinator {
       const start = { kind: 'workflow-consultation' as const, consultation: active.binding, request,
         correlationId: `consultation:${active.binding.consultationId}`,
         ...(active.nativeTurnId ? { nativeTurnId: active.nativeTurnId } : {}),
-        environment: consultation.credential.environment, instructionsDelivered: true }
+        environment: consultation.credential.environment, instructionsDelivered: true as const }
       if (current.session) {
         if (!active.nativeTarget) await current.manager.rebindApplicationAccess!(current.session, start, current.controller.signal)
       } else {
-        resolved?.beginStart?.()
         const attached = await this.openingSession(current, current.manager.attachSession(reference.session, start, current.controller.signal))
         this.assertSessionIdentity(reference.session, attached)
         resolved?.markResident?.()
@@ -1004,7 +1011,7 @@ export class ApprovalExecutionCoordinator {
       const stopRenewal = this.maintainConsultationCredential(current)
       const task = observeWorkflowConsultation({ binding: active.binding, commandId: command.id, agentId: source.agentId,
         session: current.session!, manager: current.manager, transaction, signal: current.controller.signal,
-        prompt: command.nativePrompt ?? workflowChatInputPrompt(command.request), sessionMode: current.activeSessionMode,
+        prompt: admittedWorkflowChatPrompt(command), sessionMode: current.activeSessionMode,
         captured: active.nativeTarget, secrets: Object.values(consultation.credential.environment.variables), assertCurrent: check,
         acknowledge: async (lease, providerId) => {
           await this.interactions.coordination.bindLaneTurn(lease.fence, lease.correlationId)
@@ -1022,7 +1029,7 @@ export class ApprovalExecutionCoordinator {
         },
       }).then(async next => {
         this.releaseConsultationEntry(current)
-        if (next && this.workflowControls) await this.workflowControls.dispatch(target, next.commandId)
+        if (next) await this.dispatchPromotedConsultation(owner, source, target, next.commandId)
       }).catch(async error => {
         current.retainedObservationError = error
         if (!isRestartCancellation(error, current.controller.signal)) componentLogger('harness').warn(
@@ -1033,16 +1040,47 @@ export class ApprovalExecutionCoordinator {
       })
       consultation.task = task
     } catch (error) {
-      await release()
-      const captured = await transaction(c => readCoordinatorConsultationLocked(c.sql, source.runId, target.waitingActivationId))
-      if (!captured?.nativeTarget && captured?.state === 'admitted') {
-        await this.collaboration?.releaseConsultation(active.binding, transaction, 'terminal')
-        if (consultation.credential) await this.credentials?.revoke(consultation.credential)
-        await transaction(c => failCoordinatorConsultationPreparationLocked(c.sql, { binding: active.binding,
-          errorCode: error instanceof DomainError ? error.code : 'CONSULTATION_PREPARATION_FAILED', now: new Date().toISOString() }))
-      }
+      try {
+        const captured = await transaction(c => readCoordinatorConsultationLocked(c.sql, source.runId, target.waitingActivationId))
+        if (captured?.binding.consultationId === active.binding.consultationId
+          && !captured.nativeTarget && captured.state === 'admitted') {
+          await this.releaseFailedConsultationPreparation(current, request, transaction)
+          const next = await transaction(c => failCoordinatorConsultationPreparationLocked(c.sql, { binding: active.binding,
+            errorCode: error instanceof DomainError ? error.code : 'CONSULTATION_PREPARATION_FAILED', now: new Date().toISOString() }))
+          this.releaseConsultationEntry(current)
+          if (next) await this.dispatchPromotedConsultation(owner, source, target, next.commandId)
+        }
+      } finally { await release() }
       throw error
     }
+  }
+
+  private async dispatchPromotedConsultation(owner: RunOwnership, source: HarnessExecution,
+    target: Extract<WorkflowChatTarget, { kind: 'workflow_coordinator' }>, commandId: string): Promise<void> {
+    const command = await this.consultationTransaction(owner, target)(context =>
+      readWorkflowControlCommandLocked(context.sql, source.runId, commandId))
+    if (command) await this.dispatchWorkflowConsultation(target, command, owner, source)
+  }
+
+  private async releaseFailedConsultationPreparation(owned: OwnedNativeSession, request: HarnessExecutionRequest,
+    transaction: ConsultationTransaction): Promise<void> {
+    const consultation = owned.consultation!
+    await withCleanupDeadline(async signal => {
+      if (owned.opening) await owned.opening
+      if (consultation.previous) {
+        if (consultation.accessRebindAttempted) {
+          if (!owned.session || !consultation.previous.credential) throw new DomainError(
+            'REVIEWER_CREDENTIAL_LOST', 'The original reviewer credential is required for restoration.', 409)
+          await owned.manager.rebindApplicationAccess(owned.session, { request,
+            environment: consultation.previous.credential.environment, instructionsDelivered: true,
+            correlationId: `execution:${owned.execution.id}` }, signal)
+        }
+      } else {
+        await owned.manager.dispose(signal)
+      }
+    }, owned.context.acceptedPlacement?.hostRef.kind === 'device' ? deviceRequestTimeoutMs : cleanupTimeoutMs)
+    await this.collaboration?.releaseConsultation(consultation.binding, transaction, 'terminal')
+    if (consultation.credential) await this.credentials!.revoke(consultation.credential)
   }
 
   private async prepareConsultationCredential(owned: OwnedNativeSession,
@@ -1051,7 +1089,8 @@ export class ApprovalExecutionCoordinator {
     const signal = owned.controller.signal
     if (!recovery) return (await this.credentials.prepare({ executionId: owned.execution.id,
       harness: owned.context.harness, workingDirectory: owned.context.workingDirectory,
-      purpose: 'consultation', consultation: binding, signal })).credential
+      purpose: 'consultation', consultation: binding,
+      manager: this.rawManagers.get(owned.manager) ?? owned.manager, signal })).credential
     if (!this.credentials.restoreConsultation) throw new DomainError('CONSULTATION_CREDENTIAL_UNAVAILABLE',
       'The original consultation credential cannot be restored.', 409)
     const reference = await this.interactions.coordination.workflowSession(owned.execution.id)
@@ -2475,7 +2514,7 @@ export class ApprovalExecutionCoordinator {
         return { manager: resolved.manager, session, signal: owned.controller.signal }
       }
       const environment = await this.prepareEnvironment(resolutionContext, resolved, {
-        signal, purpose: context.purpose, restartOwner: options.restartOwner,
+        signal, ...(context.purpose === 'reviewer' ? { purpose: context.purpose } : {}), restartOwner: options.restartOwner,
       })
       await this.validateContinuation?.(execution.id, signal)
       options.restartOwner?.assertOwned()

@@ -15,7 +15,7 @@ type AppFixture = Awaited<ReturnType<typeof currentOperatorIntegration>>
 type SavedWorkflow = ReturnType<typeof CurrentWorkflowSaveResultSchema.parse>['value']
 async function createHierarchy(f: AppFixture, includeHierarchy = true) {
   const workspaceId = f.f.scope.workspaceId
-  const agents = []
+  const agents: Array<ReturnType<typeof AgentMutationResultSchema.parse>['value']> = []
   for (const productRole of [includeHierarchy ? 'master' : 'orchestrator', 'orchestrator', 'orchestrator', 'coder'] as const) {
     const response = await f.app.inject({ method: 'POST', url: `/api/management/workspaces/${workspaceId}/agents`,
       headers: graphHeaders(f.writer.token), payload: { workspaceId, commandId: randomUUID(), agentId: `agent-${randomUUID()}`,
@@ -75,7 +75,7 @@ function stageInput(saved: SavedWorkflow, graph: WorkflowDefinitionV3,
 }
 async function editCommand(f: AppFixture, base: string, input: unknown, via: 'http' | 'mcp') {
   if (via === 'http') {
-    const reply = await f.app.inject({ method: 'POST', url: `${base}/definition/edits`, headers: graphHeaders(f.writer.token), payload: input })
+    const reply = await f.app.inject({ method: 'POST', url: `${base}/definition/edits`, headers: { ...graphHeaders(f.writer.token), 'content-type': 'application/json' }, payload: JSON.stringify(input) })
     expect(reply.statusCode, reply.body).toBe(200)
     return CurrentEditReadResultSchema.parse(reply.json())
   }
@@ -116,7 +116,7 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
         member.workflowNodeId === 'node-3' ? { ...member, parentNodeId: 'node-2' } : member) }
       const input = { workspaceId: t.workspaceId, workflowId: t.workflowId,
         expectedRevision: t.saved.value.revision, hierarchy }
-      const update = await f.app.inject({ method: 'PUT', url: `${t.base}/hierarchy`, headers: graphHeaders(f.writer.token), payload: input })
+      const update = await f.app.inject({ method: 'PUT', url: `${t.base}/hierarchy`, headers: { ...graphHeaders(f.writer.token), 'content-type': 'application/json' }, payload: JSON.stringify(input) })
       expect(update.statusCode, update.body).toBe(200)
       const changed = WorkflowHierarchyUpdateResultSchema.parse(update.json())
       expect(changed.value.currentVersionId).not.toBe(t.saved.value.currentVersionId)
@@ -151,7 +151,7 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       expect((await t.read()).agents[0]!.productRole).toBe('master')
       const stalePins = await f.app.inject({ method: 'PUT', url: `${t.base}/hierarchy`, headers: graphHeaders(f.writer.token),
         payload: { workspaceId: t.workspaceId, workflowId: t.workflowId, hierarchy: t.hierarchy,
-          expectedRevision: changed.value.revision, commandId: randomUUID() } })
+          expectedRevision: t.saved.value.revision, commandId: randomUUID() } })
       expect(stalePins.statusCode).toBe(409)
       expect((await t.read()).workflowVersionId).toBe(changed.value.currentVersionId)
     } finally { await f.close() }
@@ -177,7 +177,13 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
         { workflowNodeId: 'node-2', parentNodeId: 'node-1' },
         { workflowNodeId: 'node-3', parentNodeId: 'node-0' },
       ] }
-      const graph = routeNodes({ ...adopted.version.definition, entryNodeId: 'node-1', hierarchy: replacedHierarchy },
+      const obsolete = new Set(adopted.version.definition.edges.filter(edge => edge.kind === 'execution'
+        && edge.target === 'node-1').map(edge => edge.id))
+      const graph = routeNodes({ ...adopted.version.definition, entryNodeId: 'node-1', hierarchy: replacedHierarchy,
+        edges: adopted.version.definition.edges.filter(edge => !obsolete.has(edge.id)),
+        nodes: adopted.version.definition.nodes.map(node => node.choice ? { ...node, choice: {
+          outcomes: node.choice.outcomes.filter(item => item.target.kind !== 'edge' || !obsolete.has(item.target.relationshipId)),
+        } } : node) },
         [[1, 0], [1, 2], [0, 3], [2, 3]])
       const replacementStage = await editCommand(f, t.base, stageInput(adopted, graph, [
         { agent: { ...oldMaster.agent, productRole: 'orchestrator' }, baseRevision: oldMaster.metadataRevision },
@@ -187,8 +193,8 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       expect((await readAgent(f, replacement.agent.id)).agent.productRole).toBe('orchestrator')
       const replaced = await publishEdits(f, t.base, replacementStage, 'mcp')
       expect((await t.read()).hierarchy).toEqual(replacedHierarchy)
-      expect(replaced.version.definition.edges).toEqual(expect.arrayContaining(adopted.version.definition.edges))
-      expect(replaced.version.definition.nodes[0]!.choice?.outcomes).toEqual(expect.arrayContaining(adopted.version.definition.nodes[0]!.choice!.outcomes))
+      expect(replaced.version.definition.edges).toEqual(graph.edges)
+      expect(replaced.version.definition.nodes[0]!.choice?.outcomes).toEqual(graph.nodes[0]!.choice!.outcomes)
       const historical = await t.read(`?workflowVersionId=${adopted.currentVersionId}`)
       expect(historical.agents.find(agent => agent.agentId === oldMaster.agent.id)).toMatchObject({
         productRole: 'master', configurationVersionId: adopted.version.agentConfigurationVersionIds[oldMaster.agent.id],
@@ -224,6 +230,7 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       const base = `/api/management/workspaces/${t.workspaceId}/workflows/${fresh.workflow.id}`
       const master = { ...seed, id: `private-master-${randomUUID()}`, configurationVersionId: undefined, name: 'Private new Master' }
       const graph: WorkflowDefinitionV3 = { ...fresh.workflow, entryNodeId: 'new-master',
+        executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 }, approval: { handler: 'user' },
         nodes: [{ id: 'new-master', agentId: master.id, name: master.name }], edges: [], handoffs: { contractVersion: 1 },
         hierarchy: { version: 1, masterNodeId: 'new-master', parents: [] } }
       const staged = await editCommand(f, base, { action: 'stage_edits', workspaceId: t.workspaceId, workflowId: fresh.workflow.id,
@@ -237,7 +244,8 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       const published = await readAgent(f, master.id)
       expect(published.agent).toMatchObject({ id: master.id, productRole: 'master', name: master.name,
         configurationVersionId: saved.version.agentConfigurationVersionIds[master.id] })
-      const worker = { ...master, id: `private-worker-${randomUUID()}`, productRole: 'coder' as const, name: 'Invalid private Worker' }
+      const worker = { ...master, id: `private-worker-${randomUUID()}`, productRole: 'coder' as const,
+        name: 'Invalid private Worker', graphqlTools: [] }
       const invalid = stageInput(saved, { ...saved.version.definition,
         nodes: [...saved.version.definition.nodes, { id: 'invalid-worker', agentId: worker.id, name: worker.name }],
         hierarchy: { version: 1, masterNodeId: 'new-master', parents: [{ workflowNodeId: 'invalid-worker', parentNodeId: 'new-master' }] },
@@ -265,7 +273,9 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
         workspaceId, workflowId, commandId: randomUUID(), executionSemanticsVersion: 3,
         expectedRevision: managed.revision, expectedWorkflowVersionId: null,
         expectedAgentConfigurationVersionIds: { [agentId]: reused.agent.configurationVersionId },
-        graph: { ...managed.workflow, entryNodeId: 'reused-node', nodes: [{ id: 'reused-node', agentId }], edges: [] },
+        graph: { ...managed.workflow, entryNodeId: 'reused-node', approval: { handler: 'user' },
+          nodes: [{ id: 'reused-node', agentId, name: 'Reused Agent' }], edges: [],
+          executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 } },
       } })
       expect(savedReply.statusCode, savedReply.body).toBe(200)
       const saved = CurrentWorkflowSaveResultSchema.parse(savedReply.json()).value
@@ -395,6 +405,8 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
         ...(index === 3 ? { graphqlTools: [] } : {}),
       }))
       const graph = routeNodes({ ...fresh.workflow, entryNodeId: 'node-0', handoffs: { contractVersion: 1 },
+        approval: { handler: 'user' },
+        executionPolicy: { maxParallelism: 2, maxNodeExecutions: 8 },
         nodes: agents.map((agent, index) => ({ id: `node-${index}`, agentId: agent.id, name: agent.name })), edges: [],
         hierarchy: { version: 1, masterNodeId: 'node-0', parents: [
           { workflowNodeId: 'node-1', parentNodeId: 'node-0' }, { workflowNodeId: 'node-2', parentNodeId: 'node-1' },

@@ -142,7 +142,8 @@ export type RepeatTickAdmission = { kind: 'busy'; execution?: HarnessExecution }
   | { kind: 'wait'; dueAt: string | null } | { kind: 'admitted'; execution: HarnessExecution }
 export type WorkTerminalAcceptance = { kind: 'accepted'; execution: HarnessExecution; replayed: boolean;
   resultProtocol?: ResultProtocol }
-  | { kind: 'retry' | 'continued'; execution: HarnessExecution }
+  | { kind: 'retry'; execution: HarnessExecution }
+  | { kind: 'continued'; execution: HarnessExecution }
   | { kind: 'waiting_direction'; execution: HarnessExecution; activationId: string; replayed: boolean }
   | { kind: 'refused'; execution: HarnessExecution; code: string; replayed: boolean }
 const BindingSchema = z.object({
@@ -246,7 +247,8 @@ export class RepeatRunRepository {
       }
       assertNative()
       await context.hooks.assertAuthorityLocked(context.sql)
-      let execution: HarnessExecution | undefined, accepted = false
+      let execution: HarnessExecution | undefined
+      let accepted: boolean
       let logicalWork: WorkflowChatLockedTarget['work'], waiting: WorkflowChatLockedTarget['waiting']
       if (target.kind === 'workflow_execution') {
         const stored = await this.execution(context, target.execution.executionId)
