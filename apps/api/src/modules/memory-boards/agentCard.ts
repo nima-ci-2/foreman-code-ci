@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { MemoryCardSchema, type AgentSubject, type LogicalWorkRef } from '@foreman-code/contracts'
-import { assertGraphTransaction } from '../run-graph/index.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import type { MemoryBoardAuthority } from './types.js'
 import { nodeKey, same, workKey } from './identity.js'
 import { agentCard, bindingsFor, cardByTitle, ensureBoard, lockIdentity, saveBinding, saveCard } from './repository.js'
@@ -9,7 +8,7 @@ import { checkCapacity } from './mutations.js'
 import { validateCardState } from './work.js'
 
 /** Runs inside the launch transaction, before its prompt snapshot is taken. */
-export async function ensureAgentCard(tx: SqlTransaction, authority: MemoryBoardAuthority,
+export async function ensureAgentCard(tx: GraphTransactionSql, authority: MemoryBoardAuthority,
   input: { subject: Extract<AgentSubject, { kind: 'execution' }>; work: LogicalWorkRef; title: string }, now: string): Promise<void> {
   assertGraphTransaction(tx)
   const { agent, execution } = input.subject
@@ -37,7 +36,7 @@ export async function ensureAgentCard(tx: SqlTransaction, authority: MemoryBoard
   const bindings = before ? await bindingsFor(tx, before.id) : []
   // A fresh execution reopens this Agent's work record; old failures remain in its history.
   for (const binding of bindings) if (!same(binding.work, input.work) && !binding.resolution
-    && ['failed', 'canceled'].includes(binding.state)) {
+    && ['failed', 'canceled', 'blocked'].includes(binding.state)) {
     await saveBinding(tx, row.board.id, { ...binding, revision: binding.revision + 1,
       resolution: { kind: 'reopened', commandId: `agent-card:${execution.executionId}:launch`, reason: 'Working again', resolvedAt: now } })
   }

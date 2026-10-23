@@ -17,6 +17,8 @@ import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, ChatManager, waitFor } from './helpers/operatorChatFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 
+const connectionString = process.env.TEST_DATABASE_URL
+
 let pool: OperatorChatFixture['pool']
 let access: OperatorChatFixture['access']
 let owner: OperatorChatFixture['owner']
@@ -219,8 +221,7 @@ describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding 
       } }, signal)
     }
     pool.query = (async (text: string, values?: unknown[]) => {
-      // The acknowledgement write binds five values, the last being the applied mode and preferences it records.
-      if (!paused && acknowledgeSettings && values?.length === 5 && String(values[4]).includes('"appliedMode"')) {
+      if (!paused && acknowledgeSettings && text.includes('update conversation_session_controls')) {
         paused = true
         reached()
         await released
