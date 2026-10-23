@@ -30,7 +30,7 @@ describe('Operator chat installation evidence', () => {
     await expect(owner.setup(manager, signal)).rejects.toMatchObject({ code: 'MCP_INSPECTION_CONTEXT_MISMATCH' })
   })
   it.each(['graphql', 'foreman-code'])('accepts %s for Operator setup with either supported token reference', async (serverName) => {
-    for (const credentialEnvironmentVariable of ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN']) {
+    for (const credentialEnvironmentVariable of ['GRAPHQL_MCP_TOKEN']) {
       const manager = { harness: 'codex' } as NativeHarnessSessionManager
       const owner = new PostgresOperatorChatAuthority({} as never, {} as never, {} as never, '/operator', endpoint,
         () => ({ inspect: async () => ({ harness: 'codex', runnerId: 'runner-local', workingDirectory: '/operator',

@@ -52,7 +52,7 @@ export default async function setup() {
     child.stdin.end()
     throw new Error('Heavy-job holder did not publish its owned slot')
   }
-  const previous = Object.fromEntries([INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON, INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN, INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR, INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON, INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN, INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR, 'TMPDIR', 'TMP', 'TEMP'].map((key) => [key, process.env[key]]))
+  const previous = Object.fromEntries([INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON, INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN, INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR, 'TMPDIR', 'TMP', 'TEMP'].map((key) => [key, process.env[key]]))
   Object.assign(process.env, {
     [INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON]: common,
     [INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN]: admitted.token,

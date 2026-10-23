@@ -37,8 +37,7 @@ function fixture(t, pathKind = 'direct') {
   const state = join(common, 'graphql-heavy-jobs')
   for (const folder of ['queue', 'running']) mkdirSync(join(state, folder), { recursive: true })
   const env = { ...process.env, TMPDIR: base, GRAPHQL_HEAVY_BASE_TMPDIR: root }
-  for (const key of ['GRAPHQL_HEAVY_JOB_TOKEN', 'GRAPHQL_HEAVY_JOB_COMMON',
-    'GRAPHQL_HEAVY_JOB_TOKEN', 'GRAPHQL_HEAVY_JOB_COMMON', 'CI_HOST_RUNNER', 'NODE_OPTIONS']) delete env[key]
+  for (const key of ['GRAPHQL_HEAVY_JOB_TOKEN', 'GRAPHQL_HEAVY_JOB_COMMON', 'CI_HOST_RUNNER', 'NODE_OPTIONS']) delete env[key]
   const record = overrides => ({ common, pid: process.pid, start: startTime(process.pid),
     worktree: root, pgid: null, phase: 'running', namespace, token: 'occupied', ...overrides })
   const occupy = value => {

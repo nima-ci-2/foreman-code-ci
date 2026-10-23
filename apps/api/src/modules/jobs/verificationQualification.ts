@@ -159,7 +159,7 @@ async function observeContainerIsolation(input: {
     hostPidNamespace: await readlink('/proc/self/ns/pid'), hostNetworkNamespace: await readlink('/proc/self/ns/net'),
     hostCgroupNamespace: await readlink('/proc/self/ns/cgroup'),
     ownerSentinelPaths: [ownerSentinel] })
-  const environment = ['CI', INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST, INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST,
+  const environment = ['CI', INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST,
     'FOREMAN_CODE_VERIFICATION_ENVIRONMENT', 'HOME', 'LANG',
     'PATH', 'TMPDIR', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', ...Object.keys(JOB_GIT_ENVIRONMENT)]
   if (Array.isArray(observation.environment) && observation.environment.includes('HOSTNAME')) environment.push('HOSTNAME')

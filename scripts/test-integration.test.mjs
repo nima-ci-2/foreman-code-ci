@@ -526,7 +526,7 @@ test('unknown or invalid resource measurements retain twelve without ignoring kn
 })
 
 test('explicit shard requests run at most at the computed resource cap', () => {
-  for (const variable of ['GRAPHQL_INTEGRATION_SHARDS', 'GRAPHQL_INTEGRATION_SHARDS']) {
+  for (const variable of ['GRAPHQL_INTEGRATION_SHARDS']) {
     assert.equal(integrationShardPlan({ [variable]: '16' }, shardResources).shards, 16)
     const smaller = integrationShardPlan({ [variable]: '8' }, shardResources)
     assert.equal(smaller.shards, 8)

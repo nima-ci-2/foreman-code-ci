@@ -48,7 +48,7 @@ describe.each(['codex'] as const)('%s managed MCP naming', (harness) => {
     expect(managedStatus(snapshot(installed), 'graphql')).toBe('installed')
   })
 
-  it.each(['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'])('keeps the supported old name usable with %s', (token) => {
+  it.each(['GRAPHQL_MCP_TOKEN'])('keeps the supported old name usable with %s', (token) => {
     const entry = connection(token)
     expect(isAppLauncher(entry)).toBe(true)
     expect(appMcpServerName({ graphql: entry })).toBe('graphql')

@@ -38,7 +38,7 @@ describe('remote execution settings', () => {
     expect(saved.listener.port).toBe(3443)
   })
 
-  it('recognizes product environment aliases as explicit overrides', () => {
+  it('recognizes the frozen environment name as an explicit override', () => {
     expect(resolveRemoteExecutionSettings(saved, { GRAPHQL_LAPTOP_EXECUTION_ENABLED: '0' }))
       .toMatchObject({ effective: { enabled: false }, environmentOverrides: ['GRAPHQL_LAPTOP_EXECUTION_ENABLED'] })
     expect(() => resolveRemoteExecutionSettings(saved, { GRAPHQL_LAPTOP_EXECUTION_ENABLED: 'true' })).toThrow()

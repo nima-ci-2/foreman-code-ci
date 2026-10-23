@@ -332,11 +332,7 @@ describe('Claude native session manager admission', () => {
   })
 
   it.each([
-    ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
-    ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
-    ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
-    ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
-  ])('delivers scoped %s credentials and starts with %s on the same inspected query', async (refreshName, startName) => {
+    ['GRAPHQL_MCP_TOKEN'], same inspected query', async (refreshName, startName) => {
     const baseServers = { graphql: { type: 'http', url: 'http://127.0.0.1:3000/mcp/app' } }
     const f = fixture(undefined, { sdkOptions: { mcpServers: baseServers }, appMcpAccess: 'management', credentialEnvironmentVariables: ['GRAPHQL_MCP_TOKEN'] })
     const tokenFree = { ...start, environment: { agentId: 'operator', variables: {} } }

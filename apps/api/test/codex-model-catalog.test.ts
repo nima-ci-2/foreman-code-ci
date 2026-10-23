@@ -142,7 +142,7 @@ it.each([
   expect(delivered).toMatchObject({ CODEX_HOME: source.CODEX_HOME, OPENAI_API_KEY: source.OPENAI_API_KEY })
   expect(commandEnvironment).toMatchObject({ CODEX_HOME: source.CODEX_HOME, OPENAI_API_KEY: source.OPENAI_API_KEY })
   expect(disabledMcp).toEqual(disabled)
-  for (const key of ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN', 'JOB_DISPATCH_DATABASE_URL',
+  for (const key of ['GRAPHQL_MCP_TOKEN', 'JOB_DISPATCH_DATABASE_URL',
     'FOREMAN_CODE_TEST_OWNER', 'NODE_OPTIONS']) {
     expect(delivered?.[key]).toBeUndefined()
     expect(commandEnvironment?.[key]).toBeUndefined()

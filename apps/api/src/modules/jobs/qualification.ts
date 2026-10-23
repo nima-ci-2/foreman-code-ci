@@ -557,7 +557,7 @@ export async function assertJobRuntimeEntryContext(raw: JobQualificationCandidat
 
 export function validateIsolationMeasurement(probe: Record<string, unknown>, candidate: JobQualificationCandidate, host: { hostPidNamespace: string; hostNetworkNamespace: string; containerId?: string; containerHostname?: string|undefined }) {
   const toolchain = probe.toolchain as Record<string, unknown> | undefined
-  const environment=['CI',INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST,INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST,'HOME','LANG','PATH',...Object.keys(JOB_GIT_ENVIRONMENT)]
+  const environment=['CI',INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST,'HOME','LANG','PATH',...Object.keys(JOB_GIT_ENVIRONMENT)]
   const managedHostname=Array.isArray(probe.environment)&&probe.environment.includes('HOSTNAME')
   if(managedHostname)environment.push('HOSTNAME')
   const hostnameMatches=managedHostname?typeof probe.hostname==='string'&&probe.hostname.length>0&&/^[a-f0-9]{64}$/.test(host.containerId??'')

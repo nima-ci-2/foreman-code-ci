@@ -8,13 +8,13 @@ import { hostEnvironment } from '../../shared/process.js'
 
 export function isDatabaseCredentialVariable(key: string): boolean {
   return key === 'DATABASE_URL' || key.endsWith('_DATABASE_URL') || key === 'PGPASSWORD'
-    || key === INSTALLATION_NAMES.environment.PRODUCTION_DB_PASSWORD || key === 'FOREMAN_CODE_PRODUCTION_DB_PASSWORD'
+    || key === INSTALLATION_NAMES.environment.PRODUCTION_DB_PASSWORD || key === INSTALLATION_NAMES.privateEnvironment.productDatabasePassword
 }
 
 export function isControllerEnvironmentVariable(key: string): boolean {
   return key === 'NODE_OPTIONS' || key.startsWith('OPERATOR_')
     || /^(?:GRAPHQL|FOREMAN_CODE)_(?:OPERATOR|APP|TEST)_/.test(key)
-    || (APP_MCP_TOKEN_NAMES as readonly string[]).includes(key)
+    || (APP_MCP_TOKEN_NAMES as readonly string[]).includes(key) || key === INSTALLATION_NAMES.privateEnvironment.productMcpToken
     || key.endsWith('DATABASE_URL') || isDatabaseCredentialVariable(key)
 }
 
@@ -27,7 +27,7 @@ export function inheritedAgentEnvironment(source: NodeJS.ProcessEnv = hostEnviro
   return environment
 }
 
-/** Deliver the admitted token in both native spellings together with its bridge location. */
+/** Deliver the admitted token with its frozen installation name and bridge location. */
 export function appMcpTokenEnvironment(source: NodeJS.ProcessEnv, runtimeEnvironment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const token = readProductEnvironment(source, 'MCP_TOKEN')
   if (token === undefined) return source

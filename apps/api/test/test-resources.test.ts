@@ -126,8 +126,7 @@ describe('disposable test resources', () => {
     } finally { removeTestRoot(resource) }
   })
 
-  it.each(['FOREMAN_CODE_', 'GRAPHQL_'])(
-    'isolates storage and harness homes and uses only explicit test authentication through %s settings', async prefix => {
+  it('isolates storage and harness homes and uses only the frozen explicit test authentication settings', async () => {
     const resource = createTestRoot()
     const auth = join(resource.directory, 'test-auth.json')
     await writeFile(auth, '{"test":"credential"}', { mode: 0o600 })
@@ -140,8 +139,7 @@ describe('disposable test resources', () => {
         GRAPHQL_API_ENV_FILE: '/real/api.env',
         FOREMAN_CODE_TEST_CODEX_AUTH_FILE: auth, FOREMAN_CODE_TEST_OPENAI_API_KEY: 'test-key',
           }
-      const environment = testEnvironment(Object.fromEntries(Object.entries(source).map(([key, value]) =>
-        [key.replace(/^FOREMAN_CODE_/, prefix), value])),
+      const environment = testEnvironment(source,
       { ...resource, name: 'graphql_test_unit', databaseUrl: new URL('/graphql_test_unit', testAdminUrl).toString() })
       for (const key of ['HOME', 'CODEX_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
         'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'FILE_STORAGE_ROOT', 'HARNESS_WORKSPACE_ROOT', 'LOG_DIR',
@@ -167,11 +165,13 @@ describe('disposable test resources', () => {
     } finally { removeTestRoot(resource) }
   })
 
-  it('rejects conflicting environment aliases before configuring test paths', () => {
+  it('ignores installation aliases and always configures owned test paths', () => {
     const resource = createTestRoot()
     try {
-      expect(() => testEnvironment({ GRAPHQL_APP_MCP_DIRECTORY: '/canonical', }, { ...resource, name: 'graphql_test_unit',
-        databaseUrl: new URL('/graphql_test_unit', testAdminUrl).toString() })).toThrow('conflicts')
+      const environment = testEnvironment({ GRAPHQL_APP_MCP_DIRECTORY: '/installed', FOREMAN_CODE_APP_MCP_DIRECTORY: '/alias' },
+        { ...resource, name: 'graphql_test_unit', databaseUrl: new URL('/graphql_test_unit', testAdminUrl).toString() })
+      expect(environment.GRAPHQL_APP_MCP_DIRECTORY).toMatch(resource.directory + '/')
+      expect(environment.FOREMAN_CODE_APP_MCP_DIRECTORY).toBeUndefined()
     } finally { removeTestRoot(resource) }
   })
 

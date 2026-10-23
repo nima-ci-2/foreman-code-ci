@@ -20,13 +20,13 @@ describe('effective local browser origin', () => {
       { GRAPHQL_WEB_PORT: '0' },
     ]) expect(() => loadConfig({ ...base, ...environment })).toThrow()
   })
-  it('retains supported installation aliases and rejects contradictory spellings', () => {
+  it('retains the saved origin settings and ignores product-name aliases', () => {
     const origin = 'http://localhost:5198'
     expect(loadConfig({ ...base, GRAPHQL_BROWSER_ORIGIN: origin, GRAPHQL_WEB_PORT: '5198' }).browserOrigin)
       .toBe(origin)
     expect(loadConfig({ ...base, GRAPHQL_BROWSER_ORIGIN: origin, }).browserOrigin)
       .toBe(origin)
     expect(loadConfig({ ...base, GRAPHQL_DEV_BROWSER_ORIGIN: origin }).browserOrigin).toBe(origin)
-    expect(() => loadConfig({ ...base, GRAPHQL_BROWSER_ORIGIN: origin, })).toThrow('conflicts')
+    expect(loadConfig({ ...base, GRAPHQL_BROWSER_ORIGIN: origin, FOREMAN_CODE_BROWSER_ORIGIN: 'http://localhost:5199' }).browserOrigin).toBe(origin)
   })
 })

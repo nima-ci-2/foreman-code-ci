@@ -189,7 +189,11 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
 - [~] #35 Code rename redone on `fix/a35-graphql`; MCP symbols and source modules use Foreman names.
   Frozen installation and saved names are centralized in contracts `installationNames.mjs`; no environment alias layer.
-  Deployed cutover remains owner-only. Foreman CI verification is in progress.
+  Deployed manifests, migration SQL and historical evidence are unchanged; standalone artifacts embed the frozen module.
+  Implementation complete; CI verification is blocked before checks by the inherited frozen-lockfile mismatch
+  (`apps/worker` adds `@foreman-code/api` without its lock entry), reproduced on base and the rename checkpoint.
+  Baseline tickets: typecheck `a003faa3-8008-4bfb-82c3-9fbf63564006`, lint `e89863c8-41bd-4b89-acbe-8d6b4bae8da9`.
+  Deployed cutover remains owner-only.
 - [~] #36 Retired `opencode` harness (156 refs), `LegacyChatDeliveryBridge`, 24 semantics-version guards.
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused

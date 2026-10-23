@@ -87,7 +87,7 @@ describe('actual worker-private HTTP relay with Main authorization double, no pa
     expect(request).toHaveBeenCalledTimes(2)
     await endpoint.close()
   })
-  it.each(['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'])('forwards the scoped %s bearer and retains authorized expiry', async tokenName => {
+  it.each(['GRAPHQL_MCP_TOKEN'])('forwards the scoped %s bearer and retains authorized expiry', async tokenName => {
     const f = await setup(tokenName)
     const route = JSON.parse(await readFile(f.route, 'utf8'))
     expect(route).toMatchObject({ endpoint: f.endpoint.endpoint, expiresAt: f.expiresAt })
