@@ -9,7 +9,7 @@ import test from 'node:test';
 import { readCommittedWorkerTargets } from '../../../scripts/worker-release-artifacts.mjs';
 import { collectBrowserRuntimeArtifacts } from '../../../scripts/browser-runtime-install.mjs';
 import { inspectQuotaHelperAbi } from '../../../scripts/quota-helper-abi.mjs';
-import { installVersion } from '../src/installation.mjs';
+import { installVersion, readInstalledRelease } from '../src/installation.mjs';
 import { matchesBrowserRuntimeTarget, readBrowserRuntimeStatus, checkBrowserRuntimeReadiness,
   readInstalledBrowserRuntime } from '../src/browserRuntimeInstall.mjs';
 import { createWorkerBrowserRuntime } from '../src/browserRuntime.mjs';
@@ -47,6 +47,7 @@ test('a published native Worker installs its real Chromium runtime and loads its
   await mkdir(stateDirectory, { mode: 0o700 });
   const restriction = '/proc/sys/kernel/apparmor_restrict_unprivileged_userns';
   const previousRestriction = (await readFile(restriction, 'utf8')).trim();
+  assert.equal(process.env.CHROME_DEVEL_SANDBOX, undefined, 'Qualification uses the published Chromium sandbox');
   const profiles = execFileSync('sudo', ['-n', 'cat', '/sys/kernel/security/apparmor/profiles'], { encoding: 'utf8' });
   assert.doesNotMatch(profiles, /^foreman-browser-(runtime|stage|build) /m, 'Qualification needs a host without a preinstalled Foreman profile');
   let profileInstalled = false, owner;
@@ -79,6 +80,7 @@ test('a published native Worker installs its real Chromium runtime and loads its
     profileInstalled = true;
     assert.equal(provisioned.status, 0, provisioned.stderr);
     assert.equal((await owner.retry()).ready, true, failures.map(error => error.message).join('\n'));
+    assert.equal((await readInstalledRelease({ root, facts, expected })).directory, installed.directory);
     assert.equal((await readBrowserRuntimeStatus(root)).state, 'ready');
     const runtime = await readInstalledBrowserRuntime({ runtimeRoot: join(root, 'browser-runtime'), target: facts });
     assert.deepEqual(await checkBrowserRuntimeReadiness(runtime), { ready: true });
@@ -88,11 +90,14 @@ test('a published native Worker installs its real Chromium runtime and loads its
   } finally {
     try { await owner?.close(); }
     finally {
-      if (profileInstalled) {
-        execFileSync('sudo', ['-n', 'apparmor_parser', '-R', '/etc/apparmor.d/foreman-browser-runtime']);
-        execFileSync('sudo', ['-n', 'rm', '/etc/apparmor.d/foreman-browser-runtime']);
+      try {
+        if (profileInstalled) {
+          execFileSync('sudo', ['-n', 'apparmor_parser', '-R', '/etc/apparmor.d/foreman-browser-runtime']);
+          execFileSync('sudo', ['-n', 'rm', '/etc/apparmor.d/foreman-browser-runtime']);
+        }
+      } finally {
+        execFileSync('sudo', ['-n', 'sysctl', '-w', `kernel.apparmor_restrict_unprivileged_userns=${previousRestriction}`]);
       }
-      execFileSync('sudo', ['-n', 'sysctl', '-w', `kernel.apparmor_restrict_unprivileged_userns=${previousRestriction}`]);
     }
   }
 

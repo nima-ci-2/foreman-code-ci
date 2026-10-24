@@ -100,6 +100,9 @@ for (const name of ['installation.mjs', 'diagnostics.mjs', 'service.mjs', 'insta
   await writeFile(join(output, 'src', name), standaloneInstallationSource(snapshotSource(`apps/worker/src/${name}`).toString('utf8')), { mode: 0o600 });
 }
 await mkdir(join(output, 'artifacts'));
+const browserProfile = 'runtime/browser/apparmor/foreman-browser-runtime';
+await mkdir(dirname(join(output, browserProfile)), { recursive: true });
+await writeFile(join(output, browserProfile), snapshotSource(browserProfile), { mode: 0o600 });
 const quotaQuerySource = 'apps/worker/artifacts/job-quota-query.c';
 const quotaQueryPath = join(output, 'artifacts/job-quota-query.c');
 await writeFile(quotaQueryPath, snapshotSource(quotaQuerySource), { mode: 0o600 });

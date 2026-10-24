@@ -109,6 +109,17 @@ matching bundle from `worker-<commit>` and run `./install <manifest sha>` with
 that Node version installed. Updates select the exact host target; another
 Ubuntu release or libc does not select a nearby target.
 
+On Ubuntu 24.04/26.04 with the default AppArmor user-namespace restriction,
+Chromium needs the scoped profile shipped at
+`runtime/browser/apparmor/foreman-browser-runtime` in the bundle. The Worker
+runs without root and never loads this profile itself. If it is missing,
+setup, doctor and browser-runtime status report the exact `sudo install` and
+`sudo apparmor_parser -r` command using the retained installed profile. Run
+that command once as an administrator, then retry the browser runtime (or
+restart the Worker). Its existing retry installs and activates the browser
+from the selected release without reinstalling the Worker. Keep Chromium's
+sandbox and the system's user-namespace restriction enabled.
+
 Browser units are built on native runners at the same source commit. On each
 matching Ubuntu runner, use the pinned pnpm installation and run:
 
